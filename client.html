@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+   <head>
+    <meta charset="utf-8"/>
+    <link href="style.css" type="text/css" rel="stylesheet" />
+   	<title>CHAT ROOM</title>
+   	<style type="text/css">
+   	body{
+   		background-color:#81C2D6;
+   	}
+   	#h1{
+   		font-family: 'Raleway',sans-serif;
+   		font-weight: bold;
+   		color: #5d5452;
+   		text-align:center;
+		text-shadow: rgba(255,255,255,0.2) 5px 5px 6px, rgba(255,255,255,0.3) 2px 3px 3px;
+   	}
+	table#main{
+		margin:auto;
+		width:1000px;
+		height:500px;
+	}
+	#screen{
+		margin:auto;
+		width:990px;
+		height:500px;
+	}
+	#topleft{
+		background-color:#8192D6;
+		float:left;
+		width:340px;
+		height:150px;
+	}
+	#topright{
+		float:right; 
+		width:630px;
+		height:500px;
+		margin-left:16px;
+	}
+	#left{
+		float:left;
+		width:340px;
+		height:330px;
+		margin-top:20px;
+	}
+	#left1{
+		background-color:#8192D6;
+	 	float:left;
+		width:160px;
+		height:330px;
+	}
+	#left2{
+		background-color:#8192D6; 
+		float:right; 
+		width:160px;
+		height:330px;
+	}
+	</style>
+      <script src="/socket.io/socket.io.js"></script>
+      <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.4.3/jquery.min.js"></script>
+	  <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.5/jquery-ui.min.js"></script>
+      <script type ="text/javascript">
+ 
+      var socketio = io.connect();
+      var roomArray = [];
+      var roomList = {};
+	  var ownerList = {};
+      var newRoom = [];
+      var currUser;
+	  var currRoom;
+	  var blackList={};
+	  var blackMsg=[];
+      //display the public message in a room
+      socketio.on("message_to_client",function(currUser, data) {
+         document.getElementById("chatlog").appendChild(document.createElement("hr"));
+         document.getElementById("chatlog").appendChild(document.createTextNode(currUser +': '+ data));
+      });
+      //default action, the site requires a username when they first time login
+ 	  socketio.on("connect", function(data){
+ 	  	currUser = prompt("Enter your username:");
+ 	  	if (currUser == null) {
+			alert("Please enter a username");
+			currUser = prompt("Enter your username:");
+		}else{
+			socketio.emit('addUser', currUser);
+		}
+		var usertxt = "<label>  "+currUser+", Welcome to chat room! </label>";
+		$("#h1").append(usertxt);
+ 	  });
+ 	  //display the room list
+ 	  socketio.on("displayRoom", function(rooms, room){
+        newRoom = rooms;
+        var temp = "";
+        for ( i in newRoom){
+          temp += '<a href="#" onclick="enterRoom(\''+newRoom[i]+'\')">' +newRoom[i]+ '</a><br>';
+        }
+        $("#roomLists").empty();
+        var txt = "<label>Current room list:</label><br>";
+        $("#roomLists").append(txt, temp);
+      });
+      //display the user list in a certain room
+      socketio.on("displayUser", function(room, users){
+        var temp = "";
+        for(i in users){
+          if(users[i] == room){
+            temp += '<a href="#" onclick="sendPrivateMsg(\''+i+'\')">' +i+ '</a><br>';
+          }
+        }
+        $("#userLists").empty();
+        var txt = "<label>Current users in " +room+ " room:</label><br>";
+        $("#userLists").append(txt, temp);
+      });
+      
+      
+      //display the error window if the password is not match.
+      socketio.on("error", function(pswdMatch){
+      	alert("the password: "+pswdMatch+" is not match, try again");
+      });
+		//when someone is kicked out
+		socketio.on("kickOut", function(kickwho){
+      	alert("Owner kicked out "+kickwho);
+      });
+		//when someone is banneed out
+		socketio.on("banOut", function(banwho){
+      	alert("Owner banned "+banwho);
+      });
+		//when someone is not in current room
+		socketio.on("NotHere", function(kickwho){
+      	alert(kickwho+" is not in the current room");
+      });
+      //creative part: when a user left a room, others in this room will get a notification: xxx left this room.
+      socketio.on("disconnectHandler", function(name){
+      	document.getElementById("chatlog").appendChild(document.createElement("hr"));
+        document.getElementById("chatlog").appendChild(document.createTextNode(name +' left the room.'));
+      });
+      
+      // display the private message
+ 	  socketio.on("displayPrivateMsg", function(username, privateM, sender){
+        if(username == currUser){
+        	if (blackMsg != sender){
+        	// creative part : set all private messages to blue color
+         		var txt = "<div style='color:blue;'>You got a message from " +sender+ " : " +privateM+ " </div><br>";
+         		$("#priMsg").append(txt);
+         	}
+        }
+      });
+	  
+	  socketio.on("getKicked", function(kickwho, room){
+        if(kickwho == currUser){
+         	socketio.emit('kicked', kickwho, room);
+         		//hide the kick and ban button when users are kicked out
+				document.getElementById("Kick").innerHTML = "";
+				document.getElementById("Ban").innerHTML = "";
+        }
+      });
+	  
+	  socketio.on("getBanned", function(banwho, room){
+        if(banwho == currUser){
+         	socketio.emit('banned', banwho, room);
+				blackList[room]=banwho;
+				//hide the kick and ban button when users are banned
+				document.getElementById("Kick").innerHTML = "";
+				document.getElementById("Ban").innerHTML = "";
+        }
+      });
+ 	  //create a room and save the creator, password and room name info
+ 	  function addRoom(){
+        var room = prompt("Enter your room name:");
+        var password = prompt("Enter room password: (empty: no password)");
+        var creator = currUser;
+        roomList[room] = password;
+		  ownerList[room]=currUser;
+        newRoom.push(room);
+        socketio.emit('addRoom', room, password, creator);
+      }
+      
+      function enterRoom(room){
+			
+			var blocked=blackList[room];
+			var enter=currUser;
+			if(blocked!=enter){
+              var pswdMatch = prompt("Enter the room password, if it doesn't have a password then leave it blank.");
+		        socketio.emit('enterRoom', room, pswdMatch);
+		        currRoom=room;
+		        if( $('#Kick').is(':empty') ) {
+		      	var txt1="<button onclick='kickpeople()'>Kick Someone</button><br>";
+		        $("#Kick").append(txt1);
+		        }
+		         if( $('#Ban').is(':empty') ) {
+		      	var txt2="<button onclick='banpeople()'>Ban Someone</button><br>";
+		         $("#Ban").append(txt2);
+		        }
+			} else{
+				alert("you are banned from this room!");
+			}
+		  
+		
+	}
+	   function kickpeople(){
+		  var room=currRoom;
+		  var fromuser=currUser;
+		  var trueowner=ownerList[room];
+		  if (trueowner==fromuser){
+			var kickwho = prompt("Enter the username you want to kick:");
+         socketio.emit('kickpeople', kickwho, room, fromuser);
+		  } else {
+			alert("you are not the owner");
+		  }
+        
+      }
+		
+		function banpeople(){
+		  var room=currRoom;
+		  var fromuser=currUser;
+		  var trueowner=ownerList[room];
+		  if (trueowner==fromuser){
+			var banwho = prompt("Enter the username you want to ban:");
+         socketio.emit('banpeople', banwho, room, fromuser);
+		  } else {
+			alert("you are not the owner");
+		  }
+        
+      }
+    //creative part: ban a user, and you will not get any private messages from this user.
+    function banMessage(){
+    	 var currUser=currUser;
+         var banUser = prompt("Enter the username that you don't want to get message from: ");
+         blackMsg=banUser;
+         alert("Now you will not get private messages form "+banUser+".");
+      }
+	//send private message
+	function sendPrivateMsg(username){
+		var sender = currUser;
+      	var priveteM = prompt("Receiver: "+username+". Enter the message that you want to send: ");
+      	if (priveteM != null && priveteM != ""){
+			socketio.emit('sendPrivateMsg', username, priveteM, sender);
+		}else{
+			alert("Nothing to send.");
+		}
+	}
+	//send public message
+      function sendMessage(){
+         var msg = document.getElementById("message_input").value;
+         socketio.emit("message_to_server", {message:msg});
+      }
+ 
+      </script>
+   </head>
+   <body>
+   	  <table id="main">
+   	  <tr>
+   	  <td>
+   	  <div id="screen">
+   	  <div id="topleft">
+   	  <div id="h1"></div><br>
+      <input type="text" id="message_input"/>
+      <button onclick="sendMessage()">send</button><br>
+      <button onclick="addRoom()">create a room</button><br>
+      <button onclick="banMessage()">ban message</button><br>
+      <div id="Kick"></div>
+	  <div id="Ban"></div><br>
+      </div>
+      
+      <div id="topright">
+      <div id="chatlog"></div>
+      </div>
+      
+      <div id="left">
+      <div id="left1">
+      <div id="roomLists"></div><br>
+      </div>
+      <div id="left2">
+      <div id="userLists"></div><br>
+      </div>
+      </div>   
+         
+      <div id="priMsg"></div><br>      
+      </div>
+      </td>
+      </tr>
+      </table>
+   </body>
+</html>
